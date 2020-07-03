@@ -1,0 +1,3 @@
+[submodule "deps/SELib.NET"]
+	path = deps/SELib.NET
+	url = https://github.com/GEEKiDoS/SELibDotNet.git
