@@ -14,106 +14,103 @@ namespace SEFormatConvertor
 {
     public class DTXFile
     {
-        int width, height;
+        uint iResType;
+
+        int iVersion;
+
+        ushort width;
+        ushort height;
+
+        ushort nMipmap;
+        ushort nSection;
+
+        int flags;
+        int userFlags;
+
+        byte[] extra;
+        byte[] cmdStr;
 
         byte[] rawBuffer;
+
+        byte storeType => extra[2];
+
+        public async Task LoadFromStream(Stream stream, bool lzma = false)
+        {
+            var br = new ExtendedBinaryReader(stream);
+
+            // DTX Header
+
+            iResType = br.ReadUInt32();
+
+            iVersion = br.ReadInt32();
+
+            width = br.ReadUInt16();
+            height = br.ReadUInt16();
+
+            nMipmap = br.ReadUInt16();
+            nSection = br.ReadUInt16();
+
+            flags = br.ReadInt32();
+            userFlags = br.ReadInt32();
+
+            extra = br.ReadBytes(12);
+
+            cmdStr = br.ReadBytes(128);
+
+            if (iResType != 0 || iVersion != -5 || nMipmap == 0)
+            {
+                if (lzma)
+                {
+                    throw new Exception("Unsupported DTX Type");
+                }
+                else
+                {
+                    stream.Position = 0;
+
+                    var lzmaStream = new LzmaDecodeStream(stream);
+                    var ms = new MemoryStream();
+
+                    lzmaStream.CopyTo(ms);
+
+                    await LoadFromStream(ms, true);
+                    return;
+                }
+            }
+
+            DXTDecoder decoder = null;
+
+            if(storeType == 4)
+            {
+                decoder = new DXT1Decoder();
+            }   
+            else if(storeType == 5)
+            {
+                decoder = new DXT3Decoder();
+            }
+            else if(storeType == 6)
+            {
+                decoder = new DXT5Decoder();
+            }
+
+            if(decoder != null)
+            {
+                rawBuffer = await decoder.DecodeFrame(stream, width, height);
+            }
+            else
+            {
+                rawBuffer = br.ReadBytes(width * height * 4);
+            }
+
+            br.Close();
+        }
 
         public static async Task<DTXFile> Load(FileInfo info)
         {
             var result = new DTXFile();
 
-            var br = new ExtendedBinaryReader(info.OpenRead());
-            {
-                var check = br.ReadUInt32();
+            await result.LoadFromStream(info.OpenRead());
 
-                if(check != 0)
-                {
-                    br.Skip(-4);
-                    result.height = br.ReadUInt16();
-                    result.width = br.ReadUInt16();
-
-                    if((result.height & (result.height - 1)) != 0 || (result.width & (result.width - 1)) != 0)
-                    {
-                        br.Close();
-
-                        var lzmaStream = new LzmaDecodeStream(info.OpenRead());
-                        var ms = new MemoryStream();
-
-                        lzmaStream.CopyTo(ms);
-
-                        br = new ExtendedBinaryReader(ms);
-                        br.Skip(0, true);
-
-                        check = br.ReadUInt32();
-
-                        if(check != 0)
-                        {
-                            br.Skip(-4);
-
-                            result.height = br.ReadUInt16();
-                            result.width = br.ReadUInt16();
-
-                            br.Skip(2);
-                        }
-                        else
-                        {
-                            br.Skip(4);
-                            result.height = br.ReadUInt16();
-                            result.width = br.ReadUInt16();
-                        }
-                    }
-                    else
-                    {
-                        br.Skip(2);
-                    }
-                }
-                else
-                {
-                    br.Skip(4);
-                    result.height = br.ReadUInt16();
-                    result.width = br.ReadUInt16();
-                }
-
-                var mipmaps = br.ReadUInt32();
-                var fmt1 = br.ReadUInt32();
-                var fmt2 = br.ReadUInt32();
-
-                br.Skip(2);
-
-                var fmt3 = br.ReadUInt16();
-
-                br.Skip(136);
-
-                Console.Write($"{info.Name}: {result.width}x{result.height} Format:");
-
-                var dx = (result.width + 3) >> 2;
-                var dy = (result.height + 3) >> 2;
-
-                if(fmt3 <= 3)
-                {
-                    result.rawBuffer = br.ReadBytes(4 * result.width * result.height);
-                    Console.Write("ABGR");
-                }
-                else if(fmt3 == 4) // DXT1
-                {
-                    var decoder = new DXT1Decoder();
-                    result.rawBuffer = await decoder.DecodeFrame(br.BaseStream, (uint)result.width, (uint)result.height);
-
-                    Console.Write("DXT1");
-                }
-                else if(fmt3 == 6 || fmt3 == 5) // DXT5
-                {
-                    var decoder = new DXT5Decoder();
-                    result.rawBuffer = await decoder.DecodeFrame(br.BaseStream, (uint)result.width, (uint)result.height);
-
-                    Console.Write("DXT5");
-                }
-
-                Console.WriteLine("");
-
-                br.Close();
-                return result;
-            }
+            return result;
         }
 
         

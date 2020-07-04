@@ -13,7 +13,7 @@ namespace DDSReader.Internal.Decoders
     {
         private const int BlockSize = 16;
 
-        public async Task<byte[]> DecodeFrame(Stream dataSource, uint width, uint height)
+        public override async Task<byte[]> DecodeFrame(Stream dataSource, uint width, uint height)
         {
             var compressedData = new byte[GetDataSize(width, height, BlockSize)];
 
@@ -28,7 +28,7 @@ namespace DDSReader.Internal.Decoders
 
             var frameData = new byte[scanlineSize * height];
 
-            Parallel.ForEach(RangeEnumerable.Range(0, (int) width, 4), new ParallelOptions(), y =>
+            Parallel.ForEach(RangeEnumerable.Range(0, (int)height, 4), new ParallelOptions(), y =>
             {
                 var colors = new RGBAColor[4];
                 var alphas = new byte[8];

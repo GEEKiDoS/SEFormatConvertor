@@ -12,7 +12,7 @@ namespace DDSReader.Internal.Decoders
     public class DXT1Decoder : DXTDecoder
     {
         private const int BlockSize = 8;
-        public async Task<byte[]> DecodeFrame(Stream dataSource, uint width, uint height)
+        public override async Task<byte[]> DecodeFrame(Stream dataSource, uint width, uint height)
         {
             var compressedData = new byte[GetDataSize(width, height, BlockSize)];
 
@@ -27,7 +27,7 @@ namespace DDSReader.Internal.Decoders
 
             var frameData = new byte[scanlineSize * height];
 
-            Parallel.ForEach(RangeEnumerable.Range(0, (int) height, 4), new ParallelOptions(),y =>
+            Parallel.ForEach(RangeEnumerable.Range(0, (int)height, 4), new ParallelOptions(),y =>
             {
                 var colors = new RGBAColor[4];
                 colors[0].a = 0xFF;

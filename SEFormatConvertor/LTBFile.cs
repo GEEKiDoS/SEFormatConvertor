@@ -159,9 +159,8 @@ namespace SEFormatConvertor
                     return null;
                 }
 
-                br.Skip(0, true);
-
                 br = new ExtendedBinaryReader(ms);
+                br.Skip(0, true);
             }
 
             // Skip header

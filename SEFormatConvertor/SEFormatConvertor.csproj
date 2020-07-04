@@ -50,6 +50,7 @@
   <ItemGroup>
     <Compile Include="DTXFile.cs" />
     <Compile Include="DXT\DXT1Decoder.cs" />
+    <Compile Include="DXT\DXT3Decoder.cs" />
     <Compile Include="DXT\DXT5Decoder.cs" />
     <Compile Include="DXT\DXTDecoder.cs" />
     <Compile Include="DXT\RangeEnumerable.cs" />

@@ -4,11 +4,16 @@
 
 #endregion
 
+using System.IO;
+using System.Threading.Tasks;
+
 namespace DDSReader.Internal.Decoders
 {
     public abstract class DXTDecoder
     {
         public const int BytesPerPixel = 4;
+
+        public virtual async Task<byte[]> DecodeFrame(Stream dataSource, uint width, uint height) { return null; }
 
         protected static int GetDataSize(uint width, uint height, int blocksize)
         {
