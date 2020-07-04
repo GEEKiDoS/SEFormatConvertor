@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Media;
 using SELib;
 using SELib.Utilities;
 using SevenZip;
@@ -59,6 +60,18 @@ namespace SEFormatConvertor
             REL_PV16 = 3 
         };
 
+        public static readonly Dictionary<string, string> replaceDictionary = new Dictionary<string, string>
+        {
+            { ".", "_" },
+            { "-", "_" },
+            { " ", "_" },
+            { "바디", "body" },
+        };
+
+        public static readonly Encoding ltbEncode = Encoding.GetEncoding(51949);
+
+        public static readonly Quaternion globalRotation = Quaternion.FromEulerAngles(-Math.PI / 2, 0, -Math.PI / 2);
+
         private LTBFile()
         {
             Bones = new Dictionary<byte, SEModelBone>();
@@ -84,51 +97,119 @@ namespace SEFormatConvertor
             foreach (var mesh in Meshes)
                 semdl.AddMesh(mesh);
 
+            foreach (var mesh in semdl.Meshes)
+            {
+                foreach (var v in mesh.Verticies)
+                {
+                    var weightLeft = 1.0f;
+
+                    var maxWeight = 0.0f;
+                    var maxWeightIdx = 0u;
+
+                    for (int i = (int)v.WeightCount - 1; i >= 0; i--)
+                    {
+                        if (v.Weights[i].BoneWeight == 0 || v.Weights[i].BoneIndex >= 0xFF)
+                        {
+                            //Console.WriteLine($"Removed SB Weight at vertex {mesh.Verticies.IndexOf(v)} on mesh {ltbFile.Meshes.IndexOf(mesh)}");
+                            v.Weights.RemoveAt(i);
+                        }
+                        else
+                        {
+                            weightLeft -= v.Weights[i].BoneWeight;
+
+                            if(v.Weights[i].BoneWeight > maxWeight)
+                            {
+                                maxWeight = v.Weights[i].BoneWeight;
+                                maxWeightIdx = v.Weights[i].BoneIndex;
+                            }
+                        }
+                    }
+
+                    if(weightLeft != 0.0f)
+                    {
+                        v.Weights.Find(weight => weight.BoneIndex == maxWeightIdx).BoneWeight += weightLeft;
+                    }
+                }
+            }
+
             semdl.GenerateLocalPositions(true, true);
 
             return semdl;
         }
 
-        public static LTBFile Read(string path)
+        public static LTBFile Read(FileInfo info)
         {
-
             var ltbFile = new LTBFile();
 
-            var br = new ExtendedBinaryReader(File.OpenRead(path));
+            var br = new ExtendedBinaryReader(info.OpenRead());
 
             var header = br.ReadUInt16();
             if(header > 20)
             {
                 br.Close();
-                var lzmaStream = new LzmaDecodeStream(File.OpenRead(path));
+                var lzmaStream = new LzmaDecodeStream(info.OpenRead());
                 var ms = new MemoryStream();
 
                 lzmaStream.CopyTo(ms);
 
+                if(ms.Length == 0)
+                {
+                    Console.WriteLine($"{info.Name} is not a vaild LTB file.");
+
+                    return null;
+                }
+
+                br.Skip(0, true);
+
                 br = new ExtendedBinaryReader(ms);
             }
 
-            uint version, numBones, numMesh;
-
+            // Skip header
             br.Skip(0x14, true);
 
-            version = br.ReadUInt32();
+            uint version = br.ReadUInt32();
 
-            br.Skip(0x8);
+            uint nKeyFrame = br.ReadUInt32();
+            uint nAnim = br.ReadUInt32();
+            uint numBones = br.ReadUInt32();
+            uint nPieces = br.ReadUInt32();
+            uint nChildModels = br.ReadUInt32();
+            uint nTris = br.ReadUInt32();
+            uint nVerts = br.ReadUInt32();
+            uint nVertexWeights = br.ReadUInt32();
+            uint nLODs = br.ReadUInt32();
+            uint nSockets = br.ReadUInt32();
+            uint nWeightSets = br.ReadUInt32();
+            uint nStrings = br.ReadUInt32();
+            uint StringLengths = br.ReadUInt32();
+            uint VertAnimDataSize = br.ReadUInt32();
+            uint nAnimData = br.ReadUInt32();
 
-            numBones = br.ReadUInt32();
+            string cmdString = br.ReadStringWithUInt16Length();
+            float globalRadius = br.ReadSingle();
 
-            br.Skip(0x3A);
+            uint iNumEnabledOBBs = br.ReadUInt32();
 
-            numMesh = br.ReadUInt32();
+            if(iNumEnabledOBBs != 0)
+            {
+                throw new Exception("LTB with OBB infomations are not supported");
+            }
+
+            uint numMesh = br.ReadUInt32();
 
             // Parse mesh nodes
             for (int i = 0; i < numMesh; i++)
             {
-                string meshName = br.ReadStringWithUInt16Length().Replace('.', '_').Replace('-', '_').Replace(' ', '_');
+                string meshName = br.ReadStringWithUInt16Length(ltbEncode);
+
+                foreach(var kvp in replaceDictionary)
+                    meshName = meshName.Replace(kvp.Key, kvp.Value);
+
                 uint numLod = br.ReadUInt32();
 
-                Console.WriteLine($"LTB Version {version}\n{meshName} - {numLod} Lods");
+                Console.WriteLine($"{meshName} - {numLod} Lods");
+
+                meshName = meshName.ToLower();
 
                 br.Skip((int)numLod * 4 + 8);
 
@@ -157,7 +238,17 @@ namespace SEFormatConvertor
                     var mesh = new SEModelMesh();
                     mesh.AddMaterialIndex(materialIndex);
 
-                    br.Skip(25);
+                    var nNumTex = br.ReadUInt32();
+                    const int MAX_PIECE_TEXTURES = 4;
+
+                    for(int iTex = 0; iTex < MAX_PIECE_TEXTURES; iTex++)
+                    {
+                        // Texture index
+                        br.ReadUInt32();
+                    }
+
+                    var renderStyle = br.ReadUInt32();
+                    var nRenderPriority = br.ReadByte();
 
                     var lodType = (PieceType)br.ReadUInt32();
 
@@ -173,8 +264,10 @@ namespace SEFormatConvertor
 
                         Console.WriteLine($"    Lod {iLod}: \n        Vertex count: {numVerts}\n        Triangle count: {numTris}");
 
-                        if(lodType == PieceType.SkelMesh)
-                            br.Skip(1);
+                        bool bReIndexBones = false, bUseMatrixPalettes = false;
+
+                        if (lodType == PieceType.SkelMesh)
+                            bReIndexBones = br.ReadBoolean();
 
                         DataType[] streamData = { (DataType)br.ReadUInt32(), (DataType)br.ReadUInt32(), (DataType)br.ReadUInt32(), (DataType)br.ReadUInt32() };
 
@@ -183,8 +276,26 @@ namespace SEFormatConvertor
                         if (lodType == PieceType.RigidMesh)
                             rigidBone = br.ReadUInt32();
                         else if (lodType == PieceType.SkelMesh)
-                            br.Skip(1);
+                            bUseMatrixPalettes = br.ReadBoolean();
                         else throw new Exception("Unsupported lod type");
+
+                        if(bUseMatrixPalettes)
+                        {
+                            uint iMinBone = br.ReadUInt32();
+                            uint iMaxBone = br.ReadUInt32();
+                        }
+
+                        var boneMap = new List<uint>();
+
+                        if(bReIndexBones)
+                        {
+                            uint reindexBoneMapSize = br.ReadUInt32();
+
+                            for(int iMap = 0; iMap < reindexBoneMapSize; iMap++)
+                            {
+                                boneMap.Add(br.ReadUInt32());
+                            }
+                        }
 
                         for (int iStream = 0; iStream < 4; ++iStream)
                         {
@@ -199,7 +310,7 @@ namespace SEFormatConvertor
                                 {
                                     v.Position = new Vector3
                                     {
-                                        X = br.ReadSingle(),
+                                        X = -br.ReadSingle(),
                                         Y = br.ReadSingle(),
                                         Z = br.ReadSingle(),
                                     };
@@ -208,7 +319,9 @@ namespace SEFormatConvertor
                                     {
                                         var weightSum = 0.0f;
 
-                                        for (int iWeight = 0; iWeight < iMaxBonesPerTri - 1; iWeight++)
+                                        var maxWeight = bUseMatrixPalettes ? iMaxBonesPerVert : iMaxBonesPerTri;
+
+                                        for (int iWeight = 0; iWeight < maxWeight - 1; iWeight++)
                                         {
                                             var weight = br.ReadSingle();
 
@@ -232,6 +345,24 @@ namespace SEFormatConvertor
                                                 BoneWeight = 1.0f - weightSum
                                             });
                                         }
+
+                                        if (bUseMatrixPalettes)
+                                        {
+                                            for (int iWeight = 0; iWeight < 4; iWeight++)
+                                            {
+                                                var boneIndex = br.ReadByte();
+
+                                                if(bReIndexBones)
+                                                {
+                                                    boneIndex = (byte)boneMap[boneIndex];
+                                                }
+
+                                                if(v.Weights.Count > iWeight)
+                                                {
+                                                    v.Weights[iWeight].BoneIndex = boneIndex;
+                                                }
+                                            }
+                                        }
                                     }
                                     else
                                     {
@@ -250,7 +381,7 @@ namespace SEFormatConvertor
                                 {
                                     v.VertexNormal = new Vector3
                                     {
-                                        X = br.ReadSingle(),
+                                        X = -br.ReadSingle(),
                                         Y = br.ReadSingle(),
                                         Z = br.ReadSingle(),
                                     };
@@ -264,7 +395,7 @@ namespace SEFormatConvertor
                                     v.UVSets.Add(new Vector2
                                     {
                                         X = br.ReadSingle(),
-                                        Y = 1.0f - br.ReadSingle()
+                                        Y = br.ReadSingle()
                                     });
 
                                     if (v.UVSets[0].X > 1.0f)
@@ -290,7 +421,7 @@ namespace SEFormatConvertor
                         for(uint iTriangle = 0; iTriangle < numTris; iTriangle ++)
                             mesh.AddFace(br.ReadUInt16(), br.ReadUInt16(), br.ReadUInt16());
                         
-                        if(lodType == PieceType.SkelMesh)
+                        if(lodType == PieceType.SkelMesh && !bUseMatrixPalettes)
                         {
                             var boneComboCount = br.ReadUInt32();
 
@@ -319,9 +450,8 @@ namespace SEFormatConvertor
                         }
 
                         ltbFile.Meshes.Add(mesh);
+                        br.Skip(br.ReadByte());
                     }
-
-                    br.Skip(br.ReadByte());
                 }
             }
 
@@ -333,9 +463,9 @@ namespace SEFormatConvertor
                 var boneId = br.ReadByte();
                 var num2 = br.ReadUInt16();
 
-                double[,] transformMatrix = new double[4, 4];
+                Matrix4x4 transformMatrix = new Matrix4x4();
 
-                for (long j = 0; j < 4; j++)
+                for (int j = 0; j < 4; j++)
                 {
                     for (int k = 0; k < 4; k++)
                     {
@@ -348,9 +478,20 @@ namespace SEFormatConvertor
                 var bone = new SEModelBone
                 {
                     BoneName = boneName.Replace('.', '_').Replace('-', '_').Replace(' ', '_'),
-                    GlobalRotation = Quaternion.FromMatrix4x4(transformMatrix),
-                    GlobalPosition = Vector3.FromMatrix4x4(transformMatrix)
+                    GlobalRotation = new Quaternion(transformMatrix),
+                    GlobalPosition = new Vector3(transformMatrix)
                 };
+
+                bone.GlobalPosition.X *= -1;
+
+                bone.GlobalRotation.Y *= -1;
+                bone.GlobalRotation.Z *= -1;
+
+                // rotate root bone;
+                if(boneId == 0)
+                {
+                    bone.GlobalRotation *= globalRotation;
+                }
 
                 ltbFile.Bones[boneId] = bone;
             }
@@ -375,21 +516,6 @@ namespace SEFormatConvertor
                 }
             }
 
-            foreach (var mesh in ltbFile.Meshes)
-            {
-                foreach (var v in mesh.Verticies)
-                {
-                    for(int i = (int)v.WeightCount - 1; i >= 0; i--)
-                    {
-                        if (v.Weights[i].BoneWeight == 0)
-                        {
-                            //Console.WriteLine($"Removed SB Weight at vertex {mesh.Verticies.IndexOf(v)} on mesh {ltbFile.Meshes.IndexOf(mesh)}");
-                            v.Weights.RemoveAt(i);
-                        }
-                    }
-                }
-            }
-
             Console.WriteLine("\nInternal filenames:");
             var childModelCount = br.ReadUInt32();
 
@@ -402,7 +528,7 @@ namespace SEFormatConvertor
 
             br.Skip(4);
 
-            if (br.BaseStream.Length - br.BaseStream.Position > 2048)
+            if (nAnim > 0)
             {
                 var animationCount = br.ReadUInt32();
 
@@ -445,13 +571,22 @@ namespace SEFormatConvertor
 
                             for(int iKeyFrame = 0; iKeyFrame < pFrames; iKeyFrame++)
                             {
-                                seanim.AddTranslationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
+                                var v = new Vector3(-br.ReadInt16() / 16.0, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
+                                seanim.AddTranslationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, v.X, v.Y, v.Z);
                             }
 
                             int rFrames = br.ReadInt32();
                             
                             for(int iKeyFrame = 0; iKeyFrame < rFrames; iKeyFrame++)
                             {
+                                var q = new Quaternion(br.ReadInt16() / 16.0, -br.ReadInt16() / 16.0, -br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
+
+                                // rotate root bone;
+                                if (iBone == 0)
+                                {
+                                    q *= globalRotation;
+                                }
+
                                 seanim.AddRotationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
                             }
                         }
@@ -466,10 +601,23 @@ namespace SEFormatConvertor
                             else
                             {
                                 for (int iKeyFrame = 0; iKeyFrame < keyFrameCount; iKeyFrame++)
-                                    seanim.AddTranslationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                {
+                                    var v = new Vector3(-br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                    seanim.AddTranslationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, v.X, v.Y, v.Z);
+                                }
 
                                 for (int iKeyFrame = 0; iKeyFrame < keyFrameCount; iKeyFrame++)
-                                    seanim.AddRotationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, br.ReadSingle(), br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                {
+                                    var q = new Quaternion(br.ReadSingle(), -br.ReadSingle(), -br.ReadSingle(), br.ReadSingle());
+
+                                    // rotate root bone;
+                                    if (iBone == 0)
+                                    {
+                                        q *= globalRotation;
+                                    }
+
+                                    seanim.AddRotationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, q.X, q.Y, q.Z, q.W);
+                                } 
                             }
                         }
                     }
