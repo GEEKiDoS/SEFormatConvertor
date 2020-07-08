@@ -12,11 +12,15 @@ namespace SEFormatConvertor
     class Program
     {
         static Queue<ThreadStart> taskQuene = new Queue<ThreadStart>();
-        static Thread[] tasks = new Thread[Environment.ProcessorCount * 2];
+        static Thread[] tasks;
 
         static void Main(string[] args)
         {
             Console.WriteLine("SEFormatConvertor by GEEKiDoS");
+
+            bool bSingleThread = args.Contains("-s");
+
+            tasks = new Thread[bSingleThread ? 1 : Environment.ProcessorCount * 2];
 
             if (args.Length == 0)
             {

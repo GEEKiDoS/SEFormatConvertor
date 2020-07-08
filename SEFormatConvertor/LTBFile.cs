@@ -9,6 +9,7 @@ using System.Windows.Media;
 using SELib;
 using SELib.Utilities;
 using SevenZip;
+using KoreanRomanisation;
 
 namespace SEFormatConvertor
 {
@@ -52,20 +53,19 @@ namespace SEFormatConvertor
             BasisVectors = 0x0100
         }
 
-        enum AnimCompressionType 
-        { 
-            None = 0, 
-            Relevant = 1, 
-            Relevant_16bit = 2, 
-            REL_PV16 = 3 
+        enum AnimCompressionType
+        {
+            None = 0,
+            Relevant = 1,
+            Relevant_16bit = 2,
+            REL_PV16 = 3
         };
 
         public static readonly Dictionary<string, string> replaceDictionary = new Dictionary<string, string>
         {
             { ".", "_" },
             { "-", "_" },
-            { " ", "_" },
-            { "바디", "body" },
+            { " ", "_" }
         };
 
         public static readonly Encoding ltbEncode = Encoding.GetEncoding(51949);
@@ -117,7 +117,7 @@ namespace SEFormatConvertor
                         {
                             weightLeft -= v.Weights[i].BoneWeight;
 
-                            if(v.Weights[i].BoneWeight > maxWeight)
+                            if (v.Weights[i].BoneWeight > maxWeight)
                             {
                                 maxWeight = v.Weights[i].BoneWeight;
                                 maxWeightIdx = v.Weights[i].BoneIndex;
@@ -125,7 +125,7 @@ namespace SEFormatConvertor
                         }
                     }
 
-                    if(weightLeft != 0.0f)
+                    if (weightLeft != 0.0f)
                     {
                         v.Weights.Find(weight => weight.BoneIndex == maxWeightIdx).BoneWeight += weightLeft;
                     }
@@ -139,12 +139,14 @@ namespace SEFormatConvertor
 
         public static LTBFile Read(FileInfo info)
         {
+            var bFlip = info.Name.StartsWith("PV");
+
             var ltbFile = new LTBFile();
 
             var br = new ExtendedBinaryReader(info.OpenRead());
 
             var header = br.ReadUInt16();
-            if(header > 20)
+            if (header > 20)
             {
                 br.Close();
                 var lzmaStream = new LzmaDecodeStream(info.OpenRead());
@@ -152,7 +154,7 @@ namespace SEFormatConvertor
 
                 lzmaStream.CopyTo(ms);
 
-                if(ms.Length == 0)
+                if (ms.Length == 0)
                 {
                     Console.WriteLine($"{info.Name} is not a vaild LTB file.");
 
@@ -189,20 +191,26 @@ namespace SEFormatConvertor
 
             uint iNumEnabledOBBs = br.ReadUInt32();
 
-            if(iNumEnabledOBBs != 0)
+            if (iNumEnabledOBBs != 0)
             {
                 throw new Exception("LTB with OBB infomations are not supported");
             }
 
             uint numMesh = br.ReadUInt32();
 
+            var romanisation = new McCuneReischauerRomanisation { PreserveNonKoreanText = true };
+
             // Parse mesh nodes
             for (int i = 0; i < numMesh; i++)
             {
                 string meshName = br.ReadStringWithUInt16Length(ltbEncode);
 
-                foreach(var kvp in replaceDictionary)
+                meshName = romanisation.RomaniseText(meshName);
+
+                foreach (var kvp in replaceDictionary)
                     meshName = meshName.Replace(kvp.Key, kvp.Value);
+
+                meshName = meshName.ToLower();
 
                 uint numLod = br.ReadUInt32();
 
@@ -232,7 +240,7 @@ namespace SEFormatConvertor
                     materialIndex = ltbFile.Materials.FindIndex(mtl => mtl.Name == meshName);
                 }
 
-                for (int iLod = 0; iLod < numLod; iLod ++)
+                for (int iLod = 0; iLod < numLod; iLod++)
                 {
                     var mesh = new SEModelMesh();
                     mesh.AddMaterialIndex(materialIndex);
@@ -240,7 +248,7 @@ namespace SEFormatConvertor
                     var nNumTex = br.ReadUInt32();
                     const int MAX_PIECE_TEXTURES = 4;
 
-                    for(int iTex = 0; iTex < MAX_PIECE_TEXTURES; iTex++)
+                    for (int iTex = 0; iTex < MAX_PIECE_TEXTURES; iTex++)
                     {
                         // Texture index
                         br.ReadUInt32();
@@ -252,8 +260,8 @@ namespace SEFormatConvertor
                     var lodType = (PieceType)br.ReadUInt32();
 
                     var lodSize = br.ReadUInt32();
-                    
-                    if(lodSize != 0)
+
+                    if (lodSize != 0)
                     {
                         uint numVerts = br.ReadUInt32();
                         uint numTris = br.ReadUInt32();
@@ -278,7 +286,7 @@ namespace SEFormatConvertor
                             bUseMatrixPalettes = br.ReadBoolean();
                         else throw new Exception("Unsupported lod type");
 
-                        if(bUseMatrixPalettes)
+                        if (bUseMatrixPalettes)
                         {
                             uint iMinBone = br.ReadUInt32();
                             uint iMaxBone = br.ReadUInt32();
@@ -286,11 +294,11 @@ namespace SEFormatConvertor
 
                         var boneMap = new List<uint>();
 
-                        if(bReIndexBones)
+                        if (bReIndexBones)
                         {
                             uint reindexBoneMapSize = br.ReadUInt32();
 
-                            for(int iMap = 0; iMap < reindexBoneMapSize; iMap++)
+                            for (int iMap = 0; iMap < reindexBoneMapSize; iMap++)
                             {
                                 boneMap.Add(br.ReadUInt32());
                             }
@@ -309,10 +317,13 @@ namespace SEFormatConvertor
                                 {
                                     v.Position = new Vector3
                                     {
-                                        X = -br.ReadSingle(),
+                                        X = br.ReadSingle(),
                                         Y = br.ReadSingle(),
                                         Z = br.ReadSingle(),
                                     };
+
+                                    if (bFlip)
+                                        v.Position.X *= -1;
 
                                     if (rigidBone == uint.MaxValue)
                                     {
@@ -351,12 +362,12 @@ namespace SEFormatConvertor
                                             {
                                                 var boneIndex = br.ReadByte();
 
-                                                if(bReIndexBones)
+                                                if (bReIndexBones)
                                                 {
                                                     boneIndex = (byte)boneMap[boneIndex];
                                                 }
 
-                                                if(v.Weights.Count > iWeight)
+                                                if (v.Weights.Count > iWeight)
                                                 {
                                                     v.Weights[iWeight].BoneIndex = boneIndex;
                                                 }
@@ -380,10 +391,13 @@ namespace SEFormatConvertor
                                 {
                                     v.VertexNormal = new Vector3
                                     {
-                                        X = -br.ReadSingle(),
+                                        X = br.ReadSingle(),
                                         Y = br.ReadSingle(),
                                         Z = br.ReadSingle(),
                                     };
+
+                                    if (bFlip)
+                                        v.VertexNormal.X *= -1;
                                 }
 
                                 if (streamData[iStream].HasFlag(DataType.Color))
@@ -417,14 +431,14 @@ namespace SEFormatConvertor
                             }
                         }
 
-                        for(uint iTriangle = 0; iTriangle < numTris; iTriangle ++)
+                        for (uint iTriangle = 0; iTriangle < numTris; iTriangle++)
                             mesh.AddFace(br.ReadUInt16(), br.ReadUInt16(), br.ReadUInt16());
-                        
-                        if(lodType == PieceType.SkelMesh && !bUseMatrixPalettes)
+
+                        if (lodType == PieceType.SkelMesh && !bUseMatrixPalettes)
                         {
                             var boneComboCount = br.ReadUInt32();
 
-                            for(int iCombo = 0; iCombo < boneComboCount; iCombo ++)
+                            for (int iCombo = 0; iCombo < boneComboCount; iCombo++)
                             {
                                 int m_BoneIndex_Start = br.ReadUInt16();
                                 int m_BoneIndex_End = m_BoneIndex_Start + br.ReadUInt16();
@@ -435,9 +449,9 @@ namespace SEFormatConvertor
 
                                 uint m_iIndexIndex = br.ReadUInt32();
 
-                                for(int iVertex = m_BoneIndex_Start; iVertex < m_BoneIndex_End; iVertex++)
+                                for (int iVertex = m_BoneIndex_Start; iVertex < m_BoneIndex_End; iVertex++)
                                 {
-                                    for(int iBone = 0; iBone < 4 && bones[iBone] != 0xFF; iBone ++)
+                                    for (int iBone = 0; iBone < 4 && bones[iBone] != 0xFF; iBone++)
                                     {
                                         if (mesh.Verticies[iVertex].Weights.Count <= iBone)
                                             break;
@@ -481,13 +495,16 @@ namespace SEFormatConvertor
                     GlobalPosition = new Vector3(transformMatrix)
                 };
 
-                bone.GlobalPosition.X *= -1;
+                if(bFlip)
+                {
+                    bone.GlobalPosition.X *= -1;
 
-                bone.GlobalRotation.Y *= -1;
-                bone.GlobalRotation.Z *= -1;
+                    bone.GlobalRotation.Y *= -1;
+                    bone.GlobalRotation.Z *= -1;
+                }
 
                 // rotate root bone;
-                if(boneId == 0)
+                if (boneId == 0)
                 {
                     bone.GlobalRotation *= globalRotation;
                 }
@@ -506,7 +523,7 @@ namespace SEFormatConvertor
                 nSubbone[i] = boneTree[i];
                 for (int j = i - 1; j >= 0; j--)
                 {
-                    if(nSubbone[j] > 0)
+                    if (nSubbone[j] > 0)
                     {
                         nSubbone[j]--;
                         ltbFile.Bones[i].BoneParent = j;
@@ -518,7 +535,7 @@ namespace SEFormatConvertor
             Console.WriteLine("\nInternal filenames:");
             var childModelCount = br.ReadUInt32();
 
-            for(int i = 0; i < childModelCount; i++)
+            for (int i = 0; i < childModelCount; i++)
             {
                 Console.WriteLine(br.ReadStringWithUInt16Length());
 
@@ -527,67 +544,97 @@ namespace SEFormatConvertor
 
             br.Skip(4);
 
-            //try
+            if (nAnim > 0)
             {
-                if (nAnim > 0)
+                var animationCount = br.ReadUInt32();
+
+                Console.WriteLine($"\nAnimation count: {animationCount}\n");
+
+                for (int i = 0; i < animationCount; i++)
                 {
-                    var animationCount = br.ReadUInt32();
+                    var seanim = new SEAnim();
 
-                    Console.WriteLine($"\nAnimation count: {animationCount}\n");
-
-                    for (int i = 0; i < animationCount; i++)
+                    var dim = new Vector3
                     {
-                        var seanim = new SEAnim();
+                        X = br.ReadSingle(),
+                        Y = br.ReadSingle(),
+                        Z = br.ReadSingle(),
+                    };
 
-                        var dim = new Vector3
+                    var animName = br.ReadStringWithUInt16Length();
+                    Console.Write(animName);
+
+                    var compressionType = (AnimCompressionType)br.ReadUInt32();
+                    var interpolationMS = br.ReadUInt32();
+
+                    var keyFrameCount = br.ReadUInt32();
+                    Console.WriteLine($" has {keyFrameCount} keyframes");
+
+                    for (int iKeyFrame = 0; iKeyFrame < keyFrameCount; iKeyFrame++)
+                    {
+                        var time = br.ReadUInt32();
+                        var animString = br.ReadStringWithUInt16Length();
+
+                        if (!string.IsNullOrEmpty(animString))
+                            seanim.AddNoteTrack(animString, iKeyFrame);
+                    }
+
+                    for (byte iBone = 0; iBone < numBones; iBone++)
+                    {
+                        if (compressionType != AnimCompressionType.None)
                         {
-                            X = br.ReadSingle(),
-                            Y = br.ReadSingle(),
-                            Z = br.ReadSingle(),
-                        };
+                            uint pFrames = br.ReadUInt32();
 
-                        var animName = br.ReadStringWithUInt16Length();
-                        Console.Write(animName);
-
-                        var compressionType = (AnimCompressionType)br.ReadUInt32();
-                        var interpolationMS = br.ReadUInt32();
-
-                        var keyFrameCount = br.ReadUInt32();
-                        Console.WriteLine($" has {keyFrameCount} keyframes");
-
-                        for (int iKeyFrame = 0; iKeyFrame < keyFrameCount; iKeyFrame++)
-                        {
-                            var time = br.ReadUInt32();
-                            var animString = br.ReadStringWithUInt16Length();
-
-                            if (!string.IsNullOrEmpty(animString))
-                                seanim.AddNoteTrack(animString, iKeyFrame);
-                        }
-
-                        for (byte iBone = 0; iBone < numBones; iBone++)
-                        {
-                            if (compressionType != AnimCompressionType.None)
+                            for (int iKeyFrame = 0; iKeyFrame < pFrames; iKeyFrame++)
                             {
-                                uint pFrames = br.ReadUInt16();
+                                var v = new Vector3(br.ReadInt16() / 16.0, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
 
-                                if (pFrames == 0)
-                                    pFrames = pFrames << 4 + br.ReadUInt16();
-                                
+                                if (bFlip)
+                                    v.X *= -1;
 
-                                for (int iKeyFrame = 0; iKeyFrame < pFrames; iKeyFrame++)
+                                seanim.AddTranslationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, v.X, v.Y, v.Z);
+                            }
+
+                            uint rFrames = br.ReadUInt32();
+
+                            for (int iKeyFrame = 0; iKeyFrame < rFrames; iKeyFrame++)
+                            {
+                                var q = new Quaternion(br.ReadInt16() / 16.0, -br.ReadInt16() / 16.0, -br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
+
+                                if (bFlip)
                                 {
-                                    var v = new Vector3(-br.ReadInt16() / 16.0, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
+                                    q.Y *= -1;
+                                    q.Z *= -1;
+                                }
+
+                                // rotate root bone;
+                                if (iBone == 0)
+                                {
+                                    q *= globalRotation;
+                                }
+
+                                seanim.AddRotationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, q.X, q.Y, q.Z, q.W);
+                            }
+                        }
+                        else if (compressionType == AnimCompressionType.None)
+                        {
+                            bool isVertexAnim = br.ReadBoolean();
+
+                            if (isVertexAnim)
+                            {
+                                throw new Exception("Vertex animation not supported!");
+                            }
+                            else
+                            {
+                                for (int iKeyFrame = 0; iKeyFrame < keyFrameCount; iKeyFrame++)
+                                {
+                                    var v = new Vector3(-br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
                                     seanim.AddTranslationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, v.X, v.Y, v.Z);
                                 }
 
-                                uint rFrames = br.ReadUInt16();
-
-                                if (rFrames == 0)
-                                    rFrames = rFrames << 4 + br.ReadUInt16();
-
-                                for (int iKeyFrame = 0; iKeyFrame < rFrames; iKeyFrame++)
+                                for (int iKeyFrame = 0; iKeyFrame < keyFrameCount; iKeyFrame++)
                                 {
-                                    var q = new Quaternion(br.ReadInt16() / 16.0, -br.ReadInt16() / 16.0, -br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
+                                    var q = new Quaternion(br.ReadSingle(), -br.ReadSingle(), -br.ReadSingle(), br.ReadSingle());
 
                                     // rotate root bone;
                                     if (iBone == 0)
@@ -595,48 +642,14 @@ namespace SEFormatConvertor
                                         q *= globalRotation;
                                     }
 
-                                    seanim.AddRotationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
-                                }
-                            }
-                            else if (compressionType == AnimCompressionType.None)
-                            {
-                                bool isVertexAnim = br.ReadBoolean();
-
-                                if (isVertexAnim)
-                                {
-                                    throw new Exception("Vertex animation not supported!");
-                                }
-                                else
-                                {
-                                    for (int iKeyFrame = 0; iKeyFrame < keyFrameCount; iKeyFrame++)
-                                    {
-                                        var v = new Vector3(-br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
-                                        seanim.AddTranslationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, v.X, v.Y, v.Z);
-                                    }
-
-                                    for (int iKeyFrame = 0; iKeyFrame < keyFrameCount; iKeyFrame++)
-                                    {
-                                        var q = new Quaternion(br.ReadSingle(), -br.ReadSingle(), -br.ReadSingle(), br.ReadSingle());
-
-                                        // rotate root bone;
-                                        if (iBone == 0)
-                                        {
-                                            q *= globalRotation;
-                                        }
-
-                                        seanim.AddRotationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, q.X, q.Y, q.Z, q.W);
-                                    }
+                                    seanim.AddRotationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, q.X, q.Y, q.Z, q.W);
                                 }
                             }
                         }
-
-                        ltbFile.Animations.Add(animName + ".seanim", seanim);
                     }
-                }
-            }
-            //catch 
-            {
 
+                    ltbFile.Animations.Add(animName + ".seanim", seanim);
+                }
             }
 
             return ltbFile;

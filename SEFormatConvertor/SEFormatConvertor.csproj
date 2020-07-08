@@ -65,6 +65,10 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\deps\KoreanRomanisation\KoreanRomanisation\KoreanRomanisation.csproj">
+      <Project>{819dbd2a-8ed3-4941-8d39-aa09bb7fecbc}</Project>
+      <Name>KoreanRomanisation</Name>
+    </ProjectReference>
     <ProjectReference Include="..\deps\SELib.NET\src\SELib\SELib.csproj">
       <Project>{e03da150-718d-4ea9-afca-d3e17a7df3e8}</Project>
       <Name>SELib</Name>
