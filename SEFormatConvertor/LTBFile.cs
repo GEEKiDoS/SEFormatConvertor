@@ -527,87 +527,67 @@ namespace SEFormatConvertor
 
             br.Skip(4);
 
-            if (nAnim > 0)
+            //try
             {
-                var animationCount = br.ReadUInt32();
-
-                Console.WriteLine($"\nAnimation count: {animationCount}\n");
-
-                for (int i = 0; i < animationCount; i++)
+                if (nAnim > 0)
                 {
-                    var seanim = new SEAnim();
+                    var animationCount = br.ReadUInt32();
 
-                    var dim = new Vector3
+                    Console.WriteLine($"\nAnimation count: {animationCount}\n");
+
+                    for (int i = 0; i < animationCount; i++)
                     {
-                        X = br.ReadSingle(),
-                        Y = br.ReadSingle(),
-                        Z = br.ReadSingle(),
-                    };
+                        var seanim = new SEAnim();
 
-                    var animName = br.ReadStringWithUInt16Length();
-                    Console.Write(animName);
-
-                    var compressionType = (AnimCompressionType)br.ReadUInt32();
-                    var interpolationMS = br.ReadUInt32();
-
-                    var keyFrameCount = br.ReadUInt32();
-                    Console.WriteLine($" has {keyFrameCount} keyframes");
-
-                    for (int iKeyFrame = 0; iKeyFrame < keyFrameCount; iKeyFrame++)
-                    {
-                        var time = br.ReadUInt32();
-                        var animString = br.ReadStringWithUInt16Length();
-
-                        if (!string.IsNullOrEmpty(animString))
-                            seanim.AddNoteTrack(animString, iKeyFrame);
-                    }
-
-                    for (byte iBone = 0; iBone < numBones; iBone++)
-                    {
-                        if(compressionType != AnimCompressionType.None)
+                        var dim = new Vector3
                         {
-                            int pFrames = br.ReadInt32();
+                            X = br.ReadSingle(),
+                            Y = br.ReadSingle(),
+                            Z = br.ReadSingle(),
+                        };
 
-                            for(int iKeyFrame = 0; iKeyFrame < pFrames; iKeyFrame++)
-                            {
-                                var v = new Vector3(-br.ReadInt16() / 16.0, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
-                                seanim.AddTranslationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, v.X, v.Y, v.Z);
-                            }
+                        var animName = br.ReadStringWithUInt16Length();
+                        Console.Write(animName);
 
-                            int rFrames = br.ReadInt32();
-                            
-                            for(int iKeyFrame = 0; iKeyFrame < rFrames; iKeyFrame++)
-                            {
-                                var q = new Quaternion(br.ReadInt16() / 16.0, -br.ReadInt16() / 16.0, -br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
+                        var compressionType = (AnimCompressionType)br.ReadUInt32();
+                        var interpolationMS = br.ReadUInt32();
 
-                                // rotate root bone;
-                                if (iBone == 0)
-                                {
-                                    q *= globalRotation;
-                                }
+                        var keyFrameCount = br.ReadUInt32();
+                        Console.WriteLine($" has {keyFrameCount} keyframes");
 
-                                seanim.AddRotationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
-                            }
+                        for (int iKeyFrame = 0; iKeyFrame < keyFrameCount; iKeyFrame++)
+                        {
+                            var time = br.ReadUInt32();
+                            var animString = br.ReadStringWithUInt16Length();
+
+                            if (!string.IsNullOrEmpty(animString))
+                                seanim.AddNoteTrack(animString, iKeyFrame);
                         }
-                        else if (compressionType == AnimCompressionType.None)
-                        {
-                            bool isVertexAnim = br.ReadBoolean();
 
-                            if (isVertexAnim)
+                        for (byte iBone = 0; iBone < numBones; iBone++)
+                        {
+                            if (compressionType != AnimCompressionType.None)
                             {
-                                throw new Exception("Vertex animation not supported!");
-                            }
-                            else
-                            {
-                                for (int iKeyFrame = 0; iKeyFrame < keyFrameCount; iKeyFrame++)
+                                uint pFrames = br.ReadUInt16();
+
+                                if (pFrames == 0)
+                                    pFrames = pFrames << 4 + br.ReadUInt16();
+                                
+
+                                for (int iKeyFrame = 0; iKeyFrame < pFrames; iKeyFrame++)
                                 {
-                                    var v = new Vector3(-br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                    var v = new Vector3(-br.ReadInt16() / 16.0, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
                                     seanim.AddTranslationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, v.X, v.Y, v.Z);
                                 }
 
-                                for (int iKeyFrame = 0; iKeyFrame < keyFrameCount; iKeyFrame++)
+                                uint rFrames = br.ReadUInt16();
+
+                                if (rFrames == 0)
+                                    rFrames = rFrames << 4 + br.ReadUInt16();
+
+                                for (int iKeyFrame = 0; iKeyFrame < rFrames; iKeyFrame++)
                                 {
-                                    var q = new Quaternion(br.ReadSingle(), -br.ReadSingle(), -br.ReadSingle(), br.ReadSingle());
+                                    var q = new Quaternion(br.ReadInt16() / 16.0, -br.ReadInt16() / 16.0, -br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
 
                                     // rotate root bone;
                                     if (iBone == 0)
@@ -615,14 +595,48 @@ namespace SEFormatConvertor
                                         q *= globalRotation;
                                     }
 
-                                    seanim.AddRotationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, q.X, q.Y, q.Z, q.W);
-                                } 
+                                    seanim.AddRotationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0, br.ReadInt16() / 16.0);
+                                }
+                            }
+                            else if (compressionType == AnimCompressionType.None)
+                            {
+                                bool isVertexAnim = br.ReadBoolean();
+
+                                if (isVertexAnim)
+                                {
+                                    throw new Exception("Vertex animation not supported!");
+                                }
+                                else
+                                {
+                                    for (int iKeyFrame = 0; iKeyFrame < keyFrameCount; iKeyFrame++)
+                                    {
+                                        var v = new Vector3(-br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+                                        seanim.AddTranslationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, v.X, v.Y, v.Z);
+                                    }
+
+                                    for (int iKeyFrame = 0; iKeyFrame < keyFrameCount; iKeyFrame++)
+                                    {
+                                        var q = new Quaternion(br.ReadSingle(), -br.ReadSingle(), -br.ReadSingle(), br.ReadSingle());
+
+                                        // rotate root bone;
+                                        if (iBone == 0)
+                                        {
+                                            q *= globalRotation;
+                                        }
+
+                                        seanim.AddRotationKey(ltbFile.Bones[iBone].BoneName, iKeyFrame, q.X, q.Y, q.Z, q.W);
+                                    }
+                                }
                             }
                         }
-                    }
 
-                    ltbFile.Animations.Add(animName + ".seanim", seanim);
+                        ltbFile.Animations.Add(animName + ".seanim", seanim);
+                    }
                 }
+            }
+            //catch 
+            {
+
             }
 
             return ltbFile;
