@@ -27,10 +27,9 @@ namespace SEFormatConvertor
         /// A list of materials, in order
         /// </summary>
         public List<SEModelMaterial> Materials { get; private set; }
-
-        public Dictionary<int, List<int[]>> WeightSets { get; private set; }
-        public Dictionary<int, List<float[]>> Weights { get; private set; }
-
+        /// <summary>
+        /// A list of animations
+        /// </summary>
         public Dictionary<string, SEAnim> Animations { get; private set; }
 
         public enum PieceType
@@ -77,9 +76,6 @@ namespace SEFormatConvertor
             Bones = new Dictionary<byte, SEModelBone>();
             Meshes = new List<SEModelMesh>();
             Materials = new List<SEModelMaterial>();
-
-            WeightSets = new Dictionary<int, List<int[]>>();
-            Weights = new Dictionary<int, List<float[]>>();
 
             Animations = new Dictionary<string, SEAnim>();
         }
@@ -145,6 +141,8 @@ namespace SEFormatConvertor
 
             var br = new ExtendedBinaryReader(info.OpenRead());
 
+            #region Header
+
             var header = br.ReadUInt16();
             if (header > 20)
             {
@@ -198,9 +196,11 @@ namespace SEFormatConvertor
 
             uint numMesh = br.ReadUInt32();
 
+            #endregion
+
             var romanisation = new McCuneReischauerRomanisation { PreserveNonKoreanText = true };
 
-            // Parse mesh nodes
+            #region Mesh nodes
             for (int i = 0; i < numMesh; i++)
             {
                 string meshName = br.ReadStringWithUInt16Length(ltbEncode);
@@ -467,7 +467,9 @@ namespace SEFormatConvertor
                     }
                 }
             }
+            #endregion
 
+            #region Bones
             uint[] boneTree = new uint[numBones];
 
             for (int i = 0; i < numBones; i++)
@@ -532,6 +534,9 @@ namespace SEFormatConvertor
                 }
             }
 
+            #endregion
+
+            #region Random stuff
             Console.WriteLine("\nInternal filenames:");
             var childModelCount = br.ReadUInt32();
 
@@ -543,7 +548,9 @@ namespace SEFormatConvertor
             }
 
             br.Skip(4);
+            #endregion
 
+            #region Animations
             if (nAnim > 0)
             {
                 var animationCount = br.ReadUInt32();
@@ -651,6 +658,8 @@ namespace SEFormatConvertor
                     ltbFile.Animations.Add(animName + ".seanim", seanim);
                 }
             }
+
+            #endregion
 
             return ltbFile;
         }

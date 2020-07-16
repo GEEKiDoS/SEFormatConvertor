@@ -91,17 +91,47 @@ namespace SEFormatConvertor
         {
             taskQuene.Enqueue(async () =>
             {
-
                 var ext = fileInfo.Extension.ToLower();
-                if (ext == ".smd")
+                
+                if(ext == ".semodel")
+                {
+                    var dir = "converted_files/";
+
+                    if (prefix != "")
+                        dir += $"{fileInfo.FullName.Replace(prefix, "").Replace(fileInfo.Name, "")}/";
+
+                    if (!Directory.Exists(dir))
+                        Directory.CreateDirectory(dir);
+
+
+                    var semodel = SEModel.Read(fileInfo.OpenRead());
+
+                    var smd = semodel.ToSMD();
+
+                    File.WriteAllText($"{dir}{fileInfo.Name.Replace(fileInfo.Extension, "")}.smd", smd);
+                }
+                else if (ext == ".smd")
                 {
                     Console.WriteLine("Converting SMD...");
 
-                    if (!Directory.Exists($"converted_files/{fileInfo.FullName.Replace(prefix, "")}/ "))
-                        Directory.CreateDirectory($"converted_files/{fileInfo.Name.Replace(prefix, "")}/");
+                    var dir = "converted_files/";
 
-                    var semdl = SEModelExt.FromSMD(fileInfo.FullName) as SEModel;
-                    semdl.Write(File.OpenWrite($"converted_files/{fileInfo.FullName.Replace(prefix, "")}/{fileInfo.Name.Replace(fileInfo.Extension, ".semodel")}"));
+                    if (prefix != "")
+                        dir += $"{fileInfo.FullName.Replace(prefix, "").Replace(fileInfo.Name, "")}/";
+
+                    if (!Directory.Exists(dir))
+                        Directory.CreateDirectory(dir);
+
+                    var smd = SMDFile.Load(fileInfo);
+
+                    if (smd.IsAnimation)
+                    {
+                        smd.ToSEAnim().Write(File.OpenWrite($"{dir}{fileInfo.Name.Replace(fileInfo.Extension, "")}.seanim"), false);
+                    }
+                    else
+                    {
+                        smd.ToSEModel().Write(File.OpenWrite($"{dir}{fileInfo.Name.Replace(fileInfo.Extension, "")}.semodel"));
+                    }
                 }
                 else if (ext == ".ltb")
                 {
@@ -132,6 +162,41 @@ namespace SEFormatConvertor
 
                     var dtxFile = await DTXFile.Load(fileInfo);
                     dtxFile.Save(File.OpenWrite($"converted_files/_images/{fileInfo.FullName.Replace(fileInfo.Extension, ".png").Replace(prefix, "")}"));
+                }
+                else if(ext == ".ogg")
+                {
+                    var br = new BinaryReader(fileInfo.OpenRead());
+
+                    uint rate = 0;
+                    ulong length = 0;
+
+                    br.BaseStream.Seek(-4, SeekOrigin.End);
+
+                    while (length == 0)
+                    {
+                        if (Encoding.ASCII.GetString(br.ReadBytes(4)) == "OggS")
+                        {
+                            br.BaseStream.Seek(2, SeekOrigin.Current);
+                            length = br.ReadUInt64();
+                        }
+
+                        br.BaseStream.Seek(-5, SeekOrigin.Current);
+                    }
+
+                    br.BaseStream.Seek(0, SeekOrigin.Begin);
+
+                    while(rate == 0)
+                    {
+                        if (Encoding.ASCII.GetString(br.ReadBytes(6)) == "vorbis")
+                        {
+                            br.BaseStream.Seek(5, SeekOrigin.Current);
+                            rate = br.ReadUInt32();
+                        }
+
+                        br.BaseStream.Seek(-5, SeekOrigin.Current);
+                    }
+
+                    Console.WriteLine($"{fileInfo.Name} has {length} Samples, Sample rate {rate}, time is {length / (float)rate} sec");
                 }
                 else
                 {

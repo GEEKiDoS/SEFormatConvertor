@@ -58,7 +58,8 @@
     <Compile Include="LTBFile.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="SEModelExt.cs" />
+    <Compile Include="SEExt.cs" />
+    <Compile Include="SMDFile.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
