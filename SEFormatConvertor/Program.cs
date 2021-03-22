@@ -163,6 +163,10 @@ namespace SEFormatConvertor
                     var dtxFile = await DTXFile.Load(fileInfo);
                     dtxFile.Save(File.OpenWrite($"converted_files/_images/{fileInfo.FullName.Replace(fileInfo.Extension, ".png").Replace(prefix, "")}"));
                 }
+                else if (ext == ".dat")
+                {
+                    var datFile = new DATFileV85(new SELib.Utilities.ExtendedBinaryReader(fileInfo.OpenRead()));
+                }
                 else if(ext == ".ogg")
                 {
                     var br = new BinaryReader(fileInfo.OpenRead());

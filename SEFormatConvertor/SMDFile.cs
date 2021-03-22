@@ -2,6 +2,7 @@
 using SELib.Utilities;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -34,14 +35,16 @@ namespace SEFormatConvertor
         {
             { ".", ":" },
             { "-", "_" },
-            { " ", "_" }
+            { " ", "_" },
+            { "~","_" },
         };
 
         public static readonly Dictionary<string, string> replaceDictionary = new Dictionary<string, string>
         {
             { ".", "_" },
             { "-", "_" },
-            { " ", "_" }
+            { " ", "_" },
+            { "~","_" },
         };
 
         private SMDFile()
@@ -54,7 +57,7 @@ namespace SEFormatConvertor
             Namespaces = new List<string>();
         }
 
-        public static float F(string str) => float.Parse(str);
+        public static float F(string str) => float.Parse(str, CultureInfo.InvariantCulture.NumberFormat);
 
         public bool IsAnimation { get => Meshes.Count == 0; }
 
@@ -77,6 +80,21 @@ namespace SEFormatConvertor
         }
 
         public SEAnim ToSEAnim() => Animation;
+
+        public static string ProcessString(string input)
+        {
+            string output = "";
+
+            for(int i = 0; i < input.Length; i++)
+            {
+                if (input[i] < 128)
+                    output += input[i];
+                else
+                    output += "_";
+            }
+
+            return output;
+        }
 
         public static SMDFile Load(FileInfo info)
         {
@@ -148,10 +166,12 @@ namespace SEFormatConvertor
                         int firstPos = line.IndexOf('"');
                         int nextPos = line.IndexOf('"', firstPos + 1);
 
-                        string boneName = line.Substring(firstPos + 1, nextPos - firstPos - 1);
+                        string boneName = ProcessString(line.Substring(firstPos + 1, nextPos - firstPos - 1));
 
                         foreach (var kvp in boneReplaceDictionary)
                             boneName = boneName.Replace(kvp.Key, kvp.Value);
+
+                        boneName = "c_" + boneName;
 
                         // this bone is under a namespace
                         if(boneName.Contains(':'))
@@ -186,7 +206,7 @@ namespace SEFormatConvertor
                         var pos = new Vector3(F(parts[1]), F(parts[2]), F(parts[3]));
                         file.Animation.AddTranslationKey(file.Bones[index].BoneName, curFrame, pos.X, pos.Y, pos.Z);
 
-                        var rot = Quaternion.FromEulerAngles(float.Parse(parts[4]), float.Parse(parts[5]), float.Parse(parts[6]));
+                        var rot = Quaternion.FromEulerAngles(F(parts[4]), F(parts[5]), F(parts[6]));
                         file.Animation.AddRotationKey(file.Bones[index].BoneName, curFrame, rot.X, rot.Y, rot.Z, rot.W);
 
                         if (curFrame == 0)
@@ -199,10 +219,12 @@ namespace SEFormatConvertor
                     {
                         if(++lnCounter % 4 == 0) // Read material line
                         {
-                            var mtlName = line.Contains('.') ? line.Substring(0, line.LastIndexOf('.')) : line;
+                            var mtlName = ProcessString(line.Contains('.') ? line.Substring(0, line.LastIndexOf('.')) : line);
 
                             foreach (var kvp in replaceDictionary)
                                 mtlName = mtlName.Replace(kvp.Key, kvp.Value);
+
+                            mtlName = "mtl_" + mtlName;
 
                             if (!file.Materials.Any(mtl => mtl.Name == mtlName))
                             {
@@ -236,7 +258,7 @@ namespace SEFormatConvertor
                         {
                             Position = new Vector3(F(parts[1]), F(parts[2]), F(parts[3])),
                             VertexNormal = new Vector3(F(parts[4]), F(parts[5]), F(parts[6])),
-                            UVSets = { new Vector2(F(parts[7]), F(parts[8])) },
+                            UVSets = { new Vector2(F(parts[7]), 1.0f - F(parts[8])) },
                         };
 
                         float weightLeft = 1.0f;
@@ -249,7 +271,7 @@ namespace SEFormatConvertor
                                 vertex.Weights.Add(new SEModelWeight
                                 {
                                     BoneIndex = uint.Parse(parts[10 + i * 2]),
-                                    BoneWeight = float.Parse(parts[11 + i * 2]),
+                                    BoneWeight = F(parts[11 + i * 2]),
                                 });
 
                                 weightLeft -= vertex.Weights.Last().BoneWeight;
